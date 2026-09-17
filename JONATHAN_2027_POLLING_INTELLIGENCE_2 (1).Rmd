@@ -1,0 +1,1618 @@
+---
+title: "JONATHAN_2027_POLLING_INTELLIGENCE_REPORT"
+author: "Owen Bolongo"
+date: "2026-05-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="C:/Users/user/Desktop/May-August_Workshop-Practice/JONATHAN_2027_POLLING_INTELLIGENCE_REPORT")
+```
+
+
+##Step 3: Install the necessary packages
+```{r}
+#install.packages("readxl")#Reading excel files
+#install.packages("tidyverse")#dplyr, ggplot, tidyr, stringr
+#install.packages("janitor")#Cleaning Messy Colums
+#install.packages("skimr")# Quick data summary
+#install.packages("scales")# Formatting axes in ggplot2
+#install.packages("ggthemes")#Provide extra ggplot themes
+#install.packages("viridis")#color-blind-friendly color scales
+#install.packages("corrplot")#correlation matrix plot
+#install.packages("caret")#Machine Learning Frameworks
+#install.packages("randomForest")# Random Forest model
+#install.packages("cluster") #K-means Cluster
+#install.packages("factoextra")#Visualizing Clustering results
+#install.packages("leaflet") #interactive maps
+```
+
+#Step 4: Loading the necessary library
+```{r}
+library(readxl)
+library(tidyverse)
+library(janitor)
+library(skimr)
+library(ggthemes)
+library(viridis)
+library(corrplot)
+library(randomForest)
+#library(factoextra)
+library(leaflet)
+```
+
+#Step 5: Load the dataset
+```{r}
+df_raw<-read_excel("KITUI.xlsx")
+```
+
+##Step 6: View the dataset/Look at the dataset
+```{r}
+#View the first 6 observations
+      #head(df_raw)
+      #View(df_raw)
+      #print(df_raw)
+
+#View the last 6 rows of the observations
+     #tail(df_raw)
+
+#Get dimmensions: number of rows * columns
+     #dim(df_raw)
+
+#Get the column names
+     #colnames(df_raw)
+     #names(df_raw)
+#Get the datatypes and structure
+     #str(df_raw)
+
+```
+
+#Step 7: Data cleaning and Visualization
+```{r}
+df<-df_raw%>%
+  clean_names()
+  colnames(df)
+#View(df)
+```
+
+```{r}
+df<-df%>%
+  mutate(charity_kaluki_ngilu=ifelse(
+        constituency_code==69 & 
+        constituency_name=="MWINGI CENTRAL" & 
+        polling_station_code=="15069034001401" &             
+        polling_station_name=="YANYONGE NURSERY SCHOOL",
+        0,
+        charity_kaluki_ngilu
+  ))
+
+df<-df%>%
+  mutate(charity_kaluki_ngilu=ifelse(
+        constituency_code==69 & 
+        constituency_name=="MWINGI CENTRAL" & 
+        polling_station_code=="15069034101801" &             
+        polling_station_name=="KANYUNGA DISPENSARY",
+        0,
+        charity_kaluki_ngilu
+  ))
+
+df<-df%>%
+  mutate(charity_kaluki_ngilu=ifelse(
+        constituency_code==69 & 
+        constituency_name=="MWINGI CENTRAL" & 
+        polling_station_code=="15069034205101" &             
+        polling_station_name=="KYANGU PRIMARY SCHOOL",
+        0,
+        charity_kaluki_ngilu
+  ))
+
+
+
+```
+#Step 8: Checking for missing values
+```{r}
+#Count NAs Per Column
+     #colSums(is.na(df))
+#More detailed:Which rows have any NA ?
+df<-df%>%
+  filter(!(if_any(everything(),is.na)))
+nrow(df)
+```
+
+#Step 9: Finding distinct value
+```{r}
+df<-df%>%
+  distinct(constituency_code,constituency_name,polling_station_code,polling_station_name, .keep_all = TRUE)
+#View(df)
+```
+
+#Step: 10 Standardize constituency names
+```{r}
+#Check unique constituency names
+unique(df$constituency_name)
+
+#TRIM WHITE SPACES AND CONVERT THEM TO UPPERCASE
+df<-df%>%
+  mutate(
+    constituency_name=str_trim(constituency_name),
+    constituency_name=str_to_upper(constituency_name)
+  )
+```
+
+#Step 11: Validate Vote Arithmetic
+A critical Validation:Valid votes must be equal to votes casted minus rejected votes. Any discrepancy signals data enty error
+```{r}
+df<-df%>%
+  mutate(
+    calculated_valid=votes_cast-rejected_votes,
+    vote_check = calculated_valid == valid_votes 
+    )
+```
+
+
+#Step:12 Get the vote share of each individual as percentage of the total votes
+```{r}
+df<-df%>%
+  mutate(
+    mueke_share=(jonathan_mwangangi_mueke/valid_votes)*100,
+    malombe_share=(julius_makau_malombe/valid_votes)*100,
+    musila_share=(david_musila/valid_votes)*100,
+    ngilu_share=(charity_kaluki_ngilu/valid_votes)*100,
+    # Turnout rate (% of registered voters who voted — approximate) 
+    rejection_rate = (rejected_votes / votes_cast) * 100,
+    
+     # Mueke's margin vs winner (positive = Mueke is winning) 
+    mueke_vs_malombe = jonathan_mwangangi_mueke - julius_makau_malombe, 
+    mueke_vs_musila  = jonathan_mwangangi_mueke - david_musila,
+    
+     # Who won this polling station? 
+    winner = case_when( 
+        julius_makau_malombe== pmax(julius_makau_malombe,jonathan_mwangangi_mueke, 
+                                      david_musila, charity_kaluki_ngilu) ~ 'Malombe', 
+      jonathan_mwangangi_mueke == pmax(julius_makau_malombe,jonathan_mwangangi_mueke, 
+                                      david_musila, charity_kaluki_ngilu) ~ 'Mueke', 
+      david_musila== pmax(julius_makau_malombe,jonathan_mwangangi_mueke, 
+                                      david_musila, charity_kaluki_ngilu) ~ 'Musila', 
+      TRUE ~ 'Ngilu' 
+    ) 
+    
+  )
+#View(df)
+```
+
+#Step 2.7 — Final Clean Dataset
+```{r}
+# Remove the validation helper columns, keep the clean dataset 
+df_clean <- df %>% 
+  select(-calculated_valid, -vote_check) 
+ 
+# Save as CSV for reproducibility 
+write.csv(df_clean, 'kitui_clean.csv', row.names = FALSE) 
+ 
+# Quick final overview 
+skim(df_clean) 
+ 
+# Explanation: 
+# select(-col)   removes a column (the minus sign means exclude) 
+# write.csv()    exports to CSV format for sharing 
+# skim()         prints a rich summary: mean, SD, missing, histograms 
+```
+
+#WEEK 3 — County-Level Performance Analysis
+##Step 3.1 — Total Votes by Candidate 
+```{r}
+# Aggregate total votes for each candidate across all stations 
+county_totals <- df_clean %>% 
+  summarise( 
+    Malombe = sum(julius_makau_malombe), 
+    Mueke   = sum(jonathan_mwangangi_mueke), 
+    Musila  = sum(david_musila), 
+    Ngilu   = sum(charity_kaluki_ngilu), 
+    Total_Valid = sum(valid_votes) 
+  ) %>% 
+  pivot_longer( 
+    cols = c(Malombe, Mueke, Musila, Ngilu), 
+    names_to  = 'candidate', 
+    values_to = 'votes' 
+  ) %>% 
+  mutate(vote_share = (votes / sum(votes)) * 100) 
+
+View(county_totals)
+ 
+# Explanation: 
+# summarise()      collapses all rows into summary statistics 
+# sum()            adds up all values in a column 
+# pivot_longer()   converts wide format to long format 
+#                  (one row per candidate, needed for ggplot2) 
+# cols = c(...)    which columns to pivot 
+# names_to         new column for old column names 
+# values_to        new column for old column values 
+```
+
+#Step 3.2 — Bar Chart: Total Votes by Candidate 
+The foundation of ggplot2 is the grammar of graphics: data + aesthetics + geometry. Every ggplot2 chart follows 
+this structure:
+
+```{r}
+ggplot(data = county_totals,             # 1. DATA: which data frame to use 
+       aes(x = reorder(candidate, -votes),# 2. AESTHETICS: x axis = candidate 
+           y = votes,                     #               y axis = vote count 
+           fill = candidate)) +           #               fill color = candidate 
+  geom_col(width = 0.6) +                 # 3. GEOMETRY: draw bars 
+  geom_text(aes(label = scales::comma(votes)),  # 4. Add number labels 
+            vjust = -0.5, size = 4, fontface = 'bold') + 
+  scale_fill_manual(values = c(           # 5. Custom colors 
+    'Malombe' = '#1B3A6B', 
+    'Mueke'   = '#0EA5E9', 
+    'Musila'  = '#16A34A', 
+    'Ngilu'   = '#D97706' 
+  )) + 
+  scale_y_continuous(labels = scales::comma) + # Format y-axis numbers 
+  labs(                                   # 6. LABELS 
+    title    = '2022 Kitui Governor: Total Votes by Candidate', 
+    subtitle = 'Polling station results aggregated to county level', 
+    x        = 'Candidate', 
+    y        = 'Total Votes', 
+    caption  = 'Source: IEBC Form 37C | Kitui County' 
+  ) + 
+  theme_minimal(base_size = 13) +          # 7. Clean theme 
+  theme(legend.position = 'none',          # Remove redundant legend 
+        plot.title = element_text(face = 'bold', color = '#1B3A6B')) 
+ 
+ggsave('week3_county_totals.png', width = 9, height = 6, dpi = 300)
+```
+
+#Step 3.3 — Pie Chart of Vote Share
+```{r}
+ggplot(county_totals, aes(x = '', y = vote_share, fill = candidate)) + 
+  geom_col(width = 1, color = 'white', linewidth = 0.5) +  # Stacked bars 
+  coord_polar(theta = 'y') +                # Convert bars to pie/donut 
+  geom_text(aes(label = paste0(candidate, '\n', round(vote_share, 1), '%')), 
+            position = position_stack(vjust = 0.5), 
+            size = 4, color = 'white', fontface = 'bold') + 
+  scale_fill_manual(values = c( 
+    'Malombe' = '#1B3A6B', 'Mueke' = '#0EA5E9', 
+    'Musila' = '#16A34A', 'Ngilu' = '#D97706' 
+  )) + 
+  labs(title = '2022 Kitui Governor: Vote Share', caption  = 'Source: IEBC Form 37C | Kitui County',
+       subtitle = 'Julius Makau Malombe received 60.3% of the county vote') + 
+  theme_void() +                  # Remove all axes and gridlines 
+  theme(legend.position = 'right', 
+        plot.title = element_text(face = 'bold', size = 14)) 
+ 
+# Explanation: 
+# coord_polar()  transforms the cartesian coordinate bar chart into a pie 
+# theta = 'y'    the y axis becomes the angle 
+# position_stack(vjust=0.5) places labels at the center of each segment 
+# theme_void()   removes background, axes, and gridlines — ideal for pies 
+```
+#Step 3.4 — Constituency-Level Summary Table
+```{r}
+constituency_summary <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise( 
+    total_stations  = n(), 
+    total_votes_cast = sum(votes_cast), 
+    malombe_votes   = sum(julius_makau_malombe), 
+    mueke_votes     = sum(jonathan_mwangangi_mueke), 
+    musila_votes    = sum(david_musila), 
+    ngilu_votes     = sum(charity_kaluki_ngilu), 
+    mueke_pct       = round((mueke_votes / sum(valid_votes)) * 100, 2) 
+  ) %>% 
+  arrange(desc(mueke_pct)) 
+ 
+# Print to console 
+View(constituency_summary) 
+ 
+# Explanation: 
+# group_by()   creates groups — all summarise() calculations happen 
+#              separately for each constituency 
+# n()          counts the number of rows in each group 
+# arrange()    sorts the results 
+# desc()       sorts in descending order (highest first)
+```
+
+#WEEK 4 — Constituency Intelligence & Heatmap Analysis 
+##Step 4.1 — Faceted Bar Charts by Constituency
+Faceted charts show the same visualization repeated for each group — one panel per constituency: 
+```{r}
+# Reshape data to long format for faceted chart 
+constituency_long <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise( 
+    Malombe = sum(julius_makau_malombe), 
+    Mueke   = sum(jonathan_mwangangi_mueke), 
+    Musila  = sum(david_musila), 
+    Ngilu   = sum(charity_kaluki_ngilu) 
+  ) %>% 
+  pivot_longer( 
+    cols = c(Malombe, Mueke, Musila, Ngilu), 
+    names_to = 'candidate', 
+    values_to = 'votes' 
+  ) 
+ 
+# Build faceted chart 
+ggplot(constituency_long, 
+       aes(x = reorder(candidate, -votes), y = votes, fill = candidate)) + 
+  geom_col(width = 0.65, show.legend = FALSE) + 
+  facet_wrap(~ constituency_name, scales = 'free_y', ncol = 3) + 
+  scale_fill_manual(values = c( 
+    'Malombe' = '#1B3A6B', 'Mueke' = '#0EA5E9', 
+    'Musila'  = '#16A34A', 'Ngilu' = '#D97706' 
+  )) + 
+  scale_y_continuous(labels = scales::comma) + 
+  labs( 
+    title    = 'Vote Distribution by Constituency — 2022 Kitui Governor', 
+    subtitle = 'Each panel shows vote totals for the four main candidates', 
+    x = NULL, y = 'Total Votes' 
+  ) + 
+  theme_minimal(base_size = 11) + 
+  theme( 
+    strip.text       = element_text(face = 'bold', color = '#1B3A6B'), 
+    strip.background = element_rect(fill = '#EFF6FF', color = NA), 
+    axis.text.x      = element_text(angle = 30, hjust = 1) 
+  ) 
+ 
+# Explanation: 
+# facet_wrap(~ constituency_name)  creates one panel per constituency 
+# scales = 'free_y'   each panel has its own y-axis scale 
+# ncol = 3            arrange panels in 3 columns 
+# strip.text          styles the panel header text 
+# strip.background    styles the panel header background 
+# axis.text.x angle   rotates x-axis labels to prevent overlap 
+```
+
+
+
+
+
+
+
+#Step 4.2 — Heatmap of Mueke Vote Share by Constituency 
+A heatmap uses color intensity to show where values are high or low — ideal for geographic political 
+intelligence: 
+```{r}
+# Calculate vote share per candidate per constituency 
+share_matrix <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise( 
+    Malombe = round(sum(julius_makau_malombe) / sum(valid_votes) * 100, 1), 
+    Mueke   = round(sum(jonathan_mwangangi_mueke) / sum(valid_votes) * 100, 1), 
+    Musila  = round(sum(david_musila) / sum(valid_votes) * 100, 1), 
+    Ngilu   = round(sum(charity_kaluki_ngilu) / sum(valid_votes) * 100, 1) 
+  ) %>% 
+  pivot_longer( 
+    cols = c(Malombe, Mueke, Musila, Ngilu), 
+    names_to  = 'candidate', 
+    values_to = 'share' 
+  ) 
+ 
+# Build heatmap 
+ggplot(share_matrix, aes(x = candidate, y = constituency_name, fill = share)) + 
+  geom_tile(color = 'white', linewidth = 0.5) + 
+  geom_text(aes(label = paste0(share, '%')), 
+            size = 3.5, fontface = 'bold', color = 'white') + 
+  scale_fill_gradient2( 
+    low = '#EFF6FF', mid = '#3B82F6', high = '#1B3A6B', 
+    midpoint = 25 
+  ) + 
+  labs( 
+    title    = 'Vote Share Heatmap — 2022 Kitui Governor', 
+    subtitle = 'Color intensity = higher vote share', 
+    x = 'Candidate', y = 'Constituency', 
+    fill = 'Vote Share (%)' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  theme(plot.title = element_text(face = 'bold', color = '#1B3A6B')) 
+ 
+# Explanation: 
+# geom_tile()         draws colored rectangles for each cell 
+# scale_fill_gradient2  two-tone gradient; mid sets the midpoint color 
+# geom_text on tile   overlays the percentage value on each cell 
+```
+
+
+
+
+
+
+
+
+#Step 4.3 — Stacked Bar Chart: Vote Composition per Constituency
+
+```{r}
+ 
+ggplot(constituency_long, 
+aes(x = constituency_name, y = votes, fill = candidate)) + 
+geom_col(position = 'fill') +        # 'fill' makes each bar = 100% 
+scale_y_continuous(labels = scales::percent) +  # Y axis as % 
+scale_fill_manual(values = c( 
+'Malombe' = '#1B3A6B', 'Mueke' = '#0EA5E9', 
+'Musila'  = '#16A34A', 'Ngilu' = '#D97706' 
+)) + 
+coord_flip() +                       
+# Flip to horizontal bars 
+labs( 
+title    = 'Vote Share Composition by Constituency', 
+subtitle = 'Each bar sums to 100% of valid votes in that constituency', 
+x = NULL, y = 'Vote Share' 
+) + 
+theme_minimal(base_size = 12) + 
+theme( 
+legend.position  = 'bottom', 
+legend.title     = element_blank() 
+) 
+# Explanation: 
+# position = 'fill'  stacks bars and normalizes each to 100% 
+# coord_flip()       rotates the chart 90 degrees for readability 
+# legend.title = element_blank()  removes the legend title 
+
+```
+
+
+
+
+
+
+
+
+
+
+#WEEK 5 — Polling Station Micro-Intelligence 
+This week drills down to the individual polling station level to identify Mueke's best and worst performance 
+locations — the building blocks of grassroots campaign targeting.
+##Step 5.1 — Top & Bottom Performing Stations for Mueke
+```{r}
+# Top 15 polling stations by Mueke's vote share 
+top_mueke <- df_clean %>% 
+  filter(valid_votes >= 50) %>%
+  select(constituency_name,polling_station_code,polling_station_name,votes_cast,jonathan_mwangangi_mueke,mueke_share)%>%
+  arrange(desc(mueke_share)) %>% 
+  head(15) 
+ 
+# Bottom 15 (where Mueke got almost no votes) 
+bottom_mueke <- df_clean %>% 
+  filter(valid_votes >= 50) %>%
+  select(constituency_name,polling_station_code,polling_station_name,votes_cast,jonathan_mwangangi_mueke,mueke_share)%>%
+  arrange(mueke_share) %>% 
+  head(15) 
+
+View(top_mueke)
+View(bottom_mueke)
+
+# Explanation: 
+# filter(valid_votes >= 50)  removes tiny stations where % is unreliable 
+# arrange(desc(...))         sorts by highest share first 
+# arrange(...)               without desc() = ascending (lowest first) 
+# head(15)                   keeps only first 15 rows 
+```
+
+
+
+
+
+
+
+
+
+#Step 5.2 — Lollipop Chart: Mueke's Best Stations 
+A lollipop chart is more elegant than a bar chart for ranked lists: 
+```{r}
+
+ggplot(bottom_mueke, 
+       aes(x = reorder(polling_station_name, mueke_share), 
+           y = mueke_share)) + 
+  geom_segment(                            # Draw the 'stick' 
+    aes(xend = polling_station_name, y = 0, yend = mueke_share), 
+    color = '#0EA5E9', linewidth = 1 
+  ) + 
+  geom_point(                              # Draw the 'lollipop head' 
+    size = 4, color = '#1B3A6B', fill = '#0EA5E9', 
+    shape = 21, stroke = 1.5 
+  ) + 
+  geom_text(aes(label = paste0(round(mueke_share, 1), '%')), 
+            hjust = -0.3, size = 3) + 
+  coord_flip() + 
+  labs( 
+    title    = "Mueke's Bottoms 15 Polling Stations — 2022", 
+    subtitle = 'Stations with at least 50 valid votes cast', 
+    x = NULL, y = 'Mueke Vote Share (%)' 
+  ) + 
+  theme_minimal(base_size = 11) 
+ 
+# Explanation: 
+# geom_segment()   draws a line from (y=0) to (yend=mueke_share) 
+# geom_point()     draws a circle at the end of each segment 
+# shape = 21       a filled circle with a separate fill and stroke color 
+# hjust = -0.3     moves text label slightly right of the point 
+# reorder()        sorts the y-axis by mueke_share value 
+```
+
+
+
+
+
+
+#Step 5.3 — Scatter Plot: Vote Size vs Mueke Performance 
+A scatter plot reveals whether Mueke performed better at large or small polling stations: 
+
+```{r}
+
+ 
+ggplot(df_clean, aes(x = valid_votes, y = mueke_share)) + 
+  geom_point( 
+    aes(color = constituency_name, size = valid_votes), 
+    alpha = 0.5                           # Semi-transparent points 
+  ) + 
+  geom_smooth(method = 'lm', se = TRUE,  # Add linear trend line 
+              color = '#1B3A6B', linewidth = 1) + 
+  scale_color_viridis_d(option = 'D') +  # Color-blind-safe palette 
+  scale_size(range = c(1, 5)) + 
+  labs( 
+    title    = 'Station Size vs Mueke Vote Share', 
+    subtitle = 'Each point = one polling station; line = linear trend', 
+    x        = 'Valid Votes Cast at Station', 
+    y        = 'Mueke Vote Share (%)', 
+    color    = 'Constituency' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  guides(size = 'none') 
+ 
+# Explanation: 
+# geom_point()   draws one point per polling station 
+# alpha = 0.5    50% transparency avoids overplotting 
+# geom_smooth(method='lm')  fits and draws a linear regression line 
+# se = TRUE      shows the 95% confidence interval band 
+# scale_color_viridis_d   discrete viridis color palette 
+# guides(size='none')     hides the size legend (size = valid_votes) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 6 — Competitor Intelligence & Coalition Analysis 
+This week students compare all four candidates and identify where voter transfers could boost Mueke in 2027 
+— the foundation of coalition strategy. 
+ 
+##Step 6.1 — Candidate Comparison Across Constituencies 
+```{r} 
+# Reshape to compare all candidates side by side 
+comparison <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise(across( 
+    c(julius_makau_malombe, jonathan_mwangangi_mueke, 
+      david_musila, charity_kaluki_ngilu), 
+    sum 
+  )) %>% 
+  rename( 
+    Malombe = julius_makau_malombe, 
+    Mueke   = jonathan_mwangangi_mueke, 
+    Musila  = david_musila, 
+    Ngilu   = charity_kaluki_ngilu 
+  ) %>% 
+  pivot_longer(-constituency_name, names_to='candidate', values_to='votes') 
+ 
+# Explanation: 
+# across()  applies the same function (sum) to multiple columns at once 
+# rename()  renames columns for cleaner output 
+# pivot_longer(-constituency_name)  pivots all columns except that one 
+ 
+```
+
+
+#Step 6.2 — Grouped Bar Chart: Head-to-Head Comparison 
+```{r}
+
+ 
+ggplot(comparison, 
+       aes(x = constituency_name, y = votes, fill = candidate)) + 
+  geom_col(position = 'dodge', width = 0.75) + # Bars side by side 
+  scale_fill_manual(values = c( 
+    'Malombe' = '#1B3A6B', 'Mueke' = '#0EA5E9', 
+    'Musila'  = '#16A34A', 'Ngilu' = '#D97706' 
+  )) + 
+  scale_y_continuous(labels = scales::comma) + 
+  labs( 
+    title    = 'Candidate Votes by Constituency — 2022 Kitui Governor', 
+    subtitle = 'Grouped bars show relative performance across all six 
+constituencies', 
+    x = NULL, y = 'Total Votes', fill = 'Candidate' 
+  ) + 
+  theme_minimal(base_size = 11) + 
+  theme( 
+    axis.text.x    = element_text(angle = 25, hjust = 1), 
+    legend.position = 'top' 
+  ) 
+ 
+# Explanation: 
+# position = 'dodge'  places bars for each candidate side-by-side 
+#                     (vs 'stack' which stacks them) 
+# legend.position='top'  moves legend above the chart 
+ 
+```
+
+#Step 6.3 — Correlation Heatmap: Candidate Vote Relationships 
+A correlation matrix reveals whether candidates are drawing from the same voter pool — critical for coalition 
+analysis: 
+
+```{r} 
+# Build correlation matrix from polling station votes 
+vote_matrix <- df_clean %>% 
+  select(julius_makau_malombe, jonathan_mwangangi_mueke, 
+         david_musila, charity_kaluki_ngilu) 
+ 
+cor_matrix <- cor(vote_matrix, use = 'complete.obs') 
+ 
+# Rename for display 
+colnames(cor_matrix) <- rownames(cor_matrix) <- 
+  c('Malombe', 'Mueke', 'Musila', 'Ngilu') 
+ 
+# Visualize with corrplot 
+corrplot( 
+  cor_matrix, 
+  method  = 'color',           # Colored squares 
+  type    = 'upper',           # Show upper triangle only 
+  addCoef.col = 'black',       # Add correlation values 
+  tl.col  = '#1B3A6B',         # Text label color 
+  col     = colorRampPalette(c('#EFF6FF', '#3B82F6', '#1B3A6B'))(200), 
+  title   = 'Candidate Vote Correlation — Polling Station Level', 
+  mar     = c(0,0,2,0) 
+) 
+ 
+# Explanation: 
+# cor()           calculates Pearson correlation between columns 
+# use='complete.obs'  ignores rows with any NA values 
+# method='color'  fills each cell with a color gradient 
+# type='upper'    only shows the top-right triangle (avoids duplication) 
+# addCoef.col     overlays the actual correlation coefficient value 
+# 
+# Correlation values range from -1 to +1: 
+# +1.0 = perfect positive correlation 
+#  0.0 = no correlation 
+# -1.0 = perfect negative correlation
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 7 — Voter Bloc Analysis & Distribution Plots 
+This week students use distribution visualizations to understand the spread of Mueke's support across polling 
+stations — identifying under-engaged zones and persuadable blocs. 
+ 
+##Step 7.1 — Distribution of Mueke's Vote Share 
+A histogram shows how frequently each vote share range occurs: 
+ 
+```{r}
+# Histogram of Mueke vote share across all polling stations 
+ggplot(df_clean, aes(x = mueke_share)) + 
+  geom_histogram( 
+    binwidth = 1,               # Each bin covers 1 percentage point 
+    fill = '#0EA5E9', 
+    color = 'white', 
+    alpha = 0.85 
+  ) + 
+  geom_vline( 
+    xintercept = mean(df_clean$mueke_share, na.rm = TRUE), 
+    linetype = 'dashed', color = '#1B3A6B', linewidth = 1 
+  ) + 
+  annotate('text', x = mean(df_clean$mueke_share) + 0.8, 
+           y = 80, label = paste0('Mean: ', 
+           round(mean(df_clean$mueke_share), 1), '%'), 
+           color = '#1B3A6B', fontface = 'bold') + 
+  labs( 
+    title    = 'Distribution of Mueke Vote Share — Polling Station Level', 
+    subtitle = 'Each bar = number of polling stations in that vote-share range', 
+    x = 'Mueke Vote Share (%)', y = 'Number of Polling Stations' 
+  ) + 
+  theme_minimal(base_size = 12) 
+ 
+# Explanation: 
+# geom_histogram()   divides x axis into bins, counts rows in each bin 
+# binwidth = 1       each bin covers 1 percentage point 
+# geom_vline()       draws a vertical line at the mean 
+# xintercept         the x-axis value where the line crosses 
+# annotate('text')   adds a custom text label at specific coordinates 
+```
+ 
+##Step 7.2 — Box Plots: Vote Share Distribution by Constituency 
+Box plots show the median, quartiles, and outliers — much more informative than just averages: 
+ 
+```{r}
+ggplot(df_clean, 
+       aes(x = reorder(constituency_name, mueke_share, FUN = median), 
+           y = mueke_share, fill = constituency_name)) + 
+  geom_boxplot(alpha = 0.7, outlier.shape = 21, 
+               outlier.fill = '#DC2626', outlier.size = 2) + 
+  geom_jitter(width = 0.2, alpha = 0.2,  # Show all data points 
+              color = '#1B3A6B', size = 0.8) + 
+  scale_fill_viridis_d(option = 'C') + 
+  coord_flip() + 
+  labs( 
+    title    = "Mueke Vote Share Distribution by Constituency", 
+    subtitle = "Box = 25th–75th percentile; line = median; dots = individual 
+stations", 
+    x = NULL, y = 'Mueke Vote Share (%)' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  theme(legend.position = 'none') 
+ 
+# Explanation: 
+# geom_boxplot()    shows: box (IQR), median line, whiskers, outliers 
+# outlier.shape=21  outliers shown as filled circles 
+# geom_jitter()     shows individual points with small random horizontal offset 
+#                   to prevent overlap — reveals data density 
+# reorder(..., FUN=median)  sorts constituencies by their median mueke_share 
+# scale_fill_viridis_d  sequential color scale (option C = plasma) 
+```
+
+
+
+
+```{r}
+library(forcats)
+# Step 1: Calculate median mueke_share per constituency
+medians <- tapply(df_clean$mueke_share, df_clean$constituency_name, median, na.rm = TRUE)
+
+# Step 2: Reorder constituency_name factor by those medians
+df_clean$constituency_name <- factor(
+  df_clean$constituency_name,
+  levels = names(sort(medians))
+)
+
+# Step 3: Now plot — no reorder() needed inside ggplot at all
+ggplot(df_clean,
+       aes(x = constituency_name,
+           y = mueke_share,
+           fill = constituency_name)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = 21,
+               outlier.fill = '#DC2626', outlier.size = 2) +
+  geom_jitter(width = 0.2, alpha = 0.2,
+              color = '#1B3A6B', size = 0.8) +
+  scale_fill_viridis_d(option = 'C') +
+  coord_flip() +
+  labs(
+    title    = "Mueke Vote Share Distribution by Constituency",
+    subtitle = "Box = 25th-75th percentile; line = median; dots = individual stations",
+    x = NULL, y = 'Mueke Vote Share (%)'
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = 'none')
+```
+ 
+##Step 7.3 — Violin Plot: Comparing Vote Distribution Shapes 
+```{r} 
+# Reshape all four candidates for comparison 
+all_shares <- df_clean %>% 
+  select(constituency_name, malombe_share, mueke_share, 
+         musila_share, ngilu_share) %>% 
+  pivot_longer( 
+    cols = ends_with('_share'), 
+    names_to  = 'candidate', 
+    values_to = 'share' 
+  ) %>% 
+  mutate(candidate = str_replace(candidate, '_share', '') %>% 
+                     str_to_title()) 
+ 
+ggplot(all_shares, aes(x = candidate, y = share, fill = candidate)) + 
+  geom_violin(trim = FALSE, alpha = 0.7) + 
+  geom_boxplot(width = 0.1, fill = 'white', alpha = 0.8) + 
+  scale_fill_manual(values = c( 
+    'Malombe_share' = '#1B3A6B', 'Mueke_share' = '#0EA5E9', 
+    'Musila_share'  = '#16A34A', 'Ngilu_share' = '#D97706' 
+  )) + 
+  labs( 
+    title    = 'Vote Share Distribution — All Candidates', 
+    subtitle = 'Width of violin = density of polling stations at that share 
+level', 
+    x = NULL, y = 'Vote Share (%)' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  theme(legend.position = 'none') 
+ 
+# Explanation: 
+# geom_violin()   shows the full distribution shape — wider = more stations 
+#                 at that vote share level 
+# trim = FALSE    shows the full tails of the distribution 
+# Overlaid boxplot (width=0.1) adds summary stats inside the violin
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 8 — Rejected Votes & Turnout Intelligence 
+Rejected votes and turnout patterns reveal campaign mobilization effectiveness and potential ballot integrity 
+issues. High rejection rates often signal voter confusion or logistical failure. 
+ 
+##Step 8.1 — Rejection Rate Analysis 
+
+```{r} 
+# Summary of rejection rates by constituency 
+rejection_summary <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise( 
+    total_rejected   = sum(rejected_votes), 
+    total_cast       = sum(votes_cast), 
+    rejection_rate   = round((total_rejected / total_cast) * 100, 2), 
+    avg_station_rate = round(mean(rejection_rate), 2) 
+  ) %>% 
+  arrange(desc(rejection_rate)) 
+ 
+print(rejection_summary) 
+ 
+# Bar chart of rejection rates 
+ggplot(rejection_summary, 
+       aes(x = reorder(constituency_name, rejection_rate), 
+           y = rejection_rate, fill = rejection_rate)) + 
+  geom_col(width = 0.6) + 
+  geom_text(aes(label = paste0(rejection_rate, '%')), 
+            hjust = -0.2, size = 4, fontface = 'bold') + 
+  scale_fill_gradient(low = '#BBF7D0', high = '#DC2626') + 
+  coord_flip() + 
+  labs( 
+    title    = 'Rejected Vote Rate by Constituency — 2022', 
+    subtitle = 'Higher rejection rates may indicate voter education gaps', 
+    x = NULL, y = 'Rejection Rate (%)' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  theme(legend.position = 'none') 
+ 
+# Explanation: 
+# scale_fill_gradient()  continuous color scale from low to high value 
+#                        green (low rejection) to red (high rejection) 
+# This chart answers: which constituencies need more voter education? 
+ 
+```
+
+
+#Step 8.2 — Scatter: Station Size vs Rejection Rate 
+
+```{r} 
+ggplot(df_clean, aes(x = votes_cast, y = rejection_rate)) + 
+  geom_point(aes(color = constituency_name), alpha = 0.4, size = 2) + 
+geom_smooth(method = 'loess', se = TRUE, 
+color = '#DC2626', fill = '#FECACA') + 
+scale_color_viridis_d() + 
+labs( 
+title    = 'Polling Station Size vs Rejection Rate', 
+subtitle = 'loess smooth shows trend — do larger stations reject more?', 
+x = 'Votes Cast at Station', y = 'Rejection Rate (%)', 
+color = 'Constituency' 
+) + 
+theme_minimal(base_size = 12) 
+# Explanation: 
+# method = 'loess'   
+#fits a LOCALLY WEIGHTED smooth curve (not straight line) 
+#                    better for detecting non-linear relationships 
+# This pattern matters: if large stations reject more, it suggests 
+# overcrowding and voter confusion — targetable with education campaigns
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 9 — Advanced Aggregation & Statistical Analysis 
+#This week introduces advanced summarization, including proportional analysis, margin calculations, and the use 
+#of dplyr's across() and window functions. 
+ 
+Step 9.1 — Mueke's Performance Gap vs Winner
+
+```{r}
+# For each station, calculate Mueke's gap vs the station winner 
+df_gap <- df_clean %>% 
+  mutate( 
+    station_winner_votes = pmax( 
+      julius_makau_malombe, david_musila, charity_kaluki_ngilu 
+    ), 
+    mueke_gap = jonathan_mwangangi_mueke - station_winner_votes, 
+    gap_pct   = (mueke_gap / valid_votes) * 100 
+  ) 
+ 
+# Density plot of the gap 
+ggplot(df_gap, aes(x = gap_pct, fill = constituency_name)) + 
+  geom_density(alpha = 0.4) + 
+  geom_vline(xintercept = 0, linetype = 'dashed', color = 'black') + 
+  scale_fill_viridis_d() + 
+  facet_wrap(~ constituency_name, ncol = 2) + 
+  labs( 
+    title    = "Mueke's Vote Gap vs Station Winner — by Constituency", 
+    subtitle = 'Negative = Mueke behind; Positive = Mueke ahead at that 
+station', 
+    x = 'Mueke Gap vs Winner (% of valid votes)', y = 'Density' 
+  ) + 
+  theme_minimal(base_size = 11) + 
+  theme(legend.position = 'none') 
+ 
+# Explanation: 
+# geom_density()   draws a smooth estimate of the distribution 
+#                  (like a smoothed histogram) 
+# pmax() without Mueke's own column = the best opponent score 
+# Density to the RIGHT of 0 = stations where Mueke actually won
+```
+
+
+
+#Step 9.2 — Cumulative Vote Share Analysis
+
+```{r}
+# Sort stations by votes cast and calculate cumulative Mueke share 
+df_cumulative <- df_clean %>% 
+  arrange(votes_cast) %>% 
+  mutate( 
+    cumulative_mueke = cumsum(jonathan_mwangangi_mueke), 
+    cumulative_valid = cumsum(valid_votes), 
+    cumulative_share = (cumulative_mueke / cumulative_valid) * 100, 
+station_rank     = row_number() 
+) 
+ggplot(df_cumulative, aes(x = station_rank, y = cumulative_share)) + 
+geom_line(color = '#0EA5E9', linewidth = 1.2) + 
+geom_hline(yintercept = mean(df_clean$mueke_share), 
+linetype = 'dashed', color = '#DC2626') + 
+labs( 
+title    = 'Cumulative Mueke Vote Share as Stations Are Added', 
+subtitle = 'Sorted by station size (smallest to largest)', 
+x = 'Polling Station Rank (by size)', y = 'Cumulative Vote Share (%)' 
+) + 
+theme_minimal(base_size = 12) 
+# Explanation: 
+# cumsum()       running total (cumulative sum) 
+# row_number()   assigns 1,2,3... to each row (useful as x-axis) 
+# geom_line()    connects points with a line — good for trends over sequence 
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 10 — Machine Learning: K-Means Clustering 
+Clustering groups polling stations with similar political profiles together without needing labeled outcomes. This 
+identifies natural political blocs — strongholds, swing zones, and lost territory. 
+ 
+#$Step 10.1 — Prepare Features for Clustering 
+```{r}
+# Select features for clustering 
+cluster_features <- df_clean %>% 
+  select( 
+    malombe_share, mueke_share, musila_share, ngilu_share, 
+    rejection_rate, valid_votes 
+  ) %>% 
+  na.omit()                    # Remove any remaining NAs 
+ 
+# Scale the features — REQUIRED for k-means 
+cluster_scaled <- scale(cluster_features) 
+ 
+# Explanation: 
+# scale()   standardizes each column to mean=0, sd=1 
+#           This is ESSENTIAL because variables on different scales 
+#           (e.g., votes 0-500 vs percentages 0-100) would cause 
+#           the larger-scale variable to dominate clustering 
+# na.omit() removes rows with any missing values 
+``` 
+ 
+##Step 10.2 — Find Optimal Number of Clusters (Elbow Method) 
+
+```{r} 
+# Calculate within-cluster sum of squares for k = 1 to 10 
+set.seed(42)   # Set seed for reproducibility 
+wss <- sapply(1:10, function(k) { 
+  kmeans(cluster_scaled, centers = k, nstart = 25)$tot.withinss 
+}) 
+ 
+# Plot the elbow curve 
+elbow_df <- data.frame(k = 1:10, wss = wss) 
+ 
+ggplot(elbow_df, aes(x = k, y = wss)) + 
+  geom_line(color = '#1B3A6B', linewidth = 1.2) + 
+  geom_point(size = 4, color = '#0EA5E9', fill = '#0EA5E9', shape = 21) + 
+  geom_vline(xintercept = 4, linetype = 'dashed', color = '#DC2626') + 
+  scale_x_continuous(breaks = 1:10) + 
+  labs( 
+    title    = 'Elbow Method — Optimal Number of Clusters', 
+    subtitle = 'Look for the elbow: the k where WSS stops dropping sharply', 
+    x = 'Number of Clusters (k)', y = 'Total Within-Cluster SS' 
+  ) + 
+  theme_minimal(base_size = 12) 
+ 
+# Explanation: 
+# set.seed(42)    makes random results reproducible 
+# sapply()        applies a function over a vector, returns a vector 
+# kmeans()        fits k-means clustering 
+# centers = k     number of clusters to create 
+# nstart = 25     tries 25 random starting points, keeps best result 
+# $tot.withinss   total within-cluster sum of squares 
+#                 (lower = more compact clusters) 
+# The 'elbow' = the k value where improvement slows — best balance 
+ 
+```
+
+
+##Step 10.3 — Fit the K-Means Model 
+
+```{r} 
+# Fit k-means with k = 4 clusters 
+set.seed(42) 
+km_model <- kmeans(cluster_scaled, centers = 4, nstart = 25) 
+ 
+# Add cluster assignment back to the original data 
+df_clustered <- df_clean %>% 
+  na.omit() %>% 
+  mutate(cluster = as.factor(km_model$cluster)) 
+ 
+# View cluster sizes 
+table(df_clustered$cluster) 
+ 
+# View cluster centers (interpret the profile of each cluster) 
+km_model$centers 
+ 
+# Explanation: 
+# km_model$cluster  the cluster label (1-4) assigned to each row 
+# as.factor()       converts numeric cluster IDs to categorical labels 
+#                   important so ggplot treats them as groups, not numbers 
+# $centers          the mean feature value for each cluster center 
+#                   use this to interpret what each cluster represents 
+ 
+
+# table() output example: 
+# 1   2   3   4 
+# 312 198 287 193 
+ 
+# $centers interpretation (approximate): 
+# Cluster 1: High Malombe, Low Mueke  -> Malombe strongholds 
+# Cluster 2: High Musila, Low Malombe -> Musila territory 
+# Cluster 3: Balanced split           -> Competitive / swing stations 
+# Cluster 4: Low all candidates       -> Very small / low-turnout stations 
+ 
+```
+
+
+#Step 10.4 — Visualize Clusters with PCA 
+Principal Component Analysis (PCA) reduces multi-dimensional data to 2D for plotting: 
+```{r} 
+# Run PCA manually
+pca_result <- prcomp(cluster_scaled)
+
+# Extract first 2 components
+pca_df <- data.frame(
+  PC1     = pca_result$x[, 1],
+  PC2     = pca_result$x[, 2],
+  cluster = as.factor(km_model$cluster)
+)
+
+# Plot manually with ggplot2
+ggplot(pca_df, aes(x = PC1, y = PC2, color = cluster)) +
+  geom_point(alpha = 0.6, size = 2) +
+  stat_ellipse(linewidth = 0.8) +
+  scale_color_manual(values = c(
+    '1' = '#1B3A6B',
+    '2' = '#0EA5E9',
+    '3' = '#16A34A',
+    '4' = '#D97706'
+  )) +
+  labs(
+    title    = "K-Means Clusters of Kitui Polling Stations",
+    subtitle = "PCA reduces 6 features to 2 dimensions for visualization",
+    x        = "Principal Component 1",
+    y        = "Principal Component 2",
+    color    = "Cluster"
+  ) +
+  theme_minimal(base_size = 12) 
+ 
+```
+
+##Step 10.5 — Map Clusters Back to Constituencies 
+
+```{r} 
+# See which constituencies have most of each cluster type 
+cluster_by_constituency <- df_clustered %>% 
+  count(constituency_name, cluster) %>% 
+  group_by(constituency_name) %>% 
+  mutate(pct = n / sum(n) * 100) 
+ 
+ggplot(cluster_by_constituency, 
+       aes(x = constituency_name, y = pct, fill = cluster)) + 
+  geom_col(position = 'fill') + 
+  scale_y_continuous(labels = scales::percent) + 
+  scale_fill_manual(values = c( 
+    '1' = '#1B3A6B', '2' = '#0EA5E9', '3' = '#16A34A', '4' = '#D97706' 
+  )) + 
+  coord_flip() + 
+  labs( 
+    title    = 'Cluster Composition by Constituency', 
+    subtitle = 'What proportion of each constituency belongs to each voter 
+cluster?', 
+    x = NULL, y = '% of Stations', fill = 'Cluster' 
+  ) + 
+  theme_minimal(base_size = 12)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 11 — Machine Learning: Predictive Model 
+This week students build a Random Forest classifier to predict whether Mueke will win a polling station in 2027 
+given station characteristics — the electability prediction model. 
+ 
+##Step 11.1 — Create the Target Variable 
+
+```{r} 
+# Define 'mueke_competitive' as TRUE if Mueke gets > 10% share 
+# This represents a meaningful threshold, not just winning 
+df_model <- df_clean %>% 
+  mutate( 
+    mueke_competitive = as.factor(ifelse(mueke_share > 10, 'Yes', 'No')) 
+  ) %>% 
+  select( 
+    mueke_competitive, 
+    valid_votes, rejection_rate, 
+    malombe_share, musila_share, ngilu_share, 
+    constituency_name 
+  ) %>% 
+  na.omit() 
+ 
+# Check class balance 
+table(df_model$mueke_competitive) 
+ 
+# Explanation: 
+# ifelse(condition, yes_value, no_value)  vectorized if-else 
+# as.factor()   converts Yes/No to a categorical factor 
+#               caret requires the target to be a factor for classification 
+# select()      keeps only the columns we want as model features 
+
+```
+
+
+ 
+##Step 11.2 — Split into Training and Test Sets 
+
+```{r} 
+library(caret)
+
+set.seed(42) 
+ 
+# Create 75/25 train/test split 
+train_index <- createDataPartition( 
+  df_model$mueke_competitive, 
+  p    = 0.75, 
+  list = FALSE 
+) 
+ 
+df_train <- df_model[train_index, ] 
+df_test  <- df_model[-train_index, ] 
+ 
+cat('Training rows:', nrow(df_train), '\n') 
+cat('Test rows:    ', nrow(df_test), '\n') 
+ 
+# Explanation: 
+# createDataPartition()   caret function for stratified splitting 
+#                         'stratified' means it preserves the Yes/No ratio 
+# p = 0.75                75% goes to training 
+# list = FALSE            returns a vector of row indices, not a list 
+# df_model[-train_index,] the NEGATIVE index = all rows NOT in train_index 
+ 
+```
+
+
+##Step 11.3 — Train the Random Forest Model 
+
+```{r} 
+# Set up cross-validation 
+train_control <- trainControl( 
+  method  = 'cv',    # k-fold cross-validation 
+  number  = 5,       # 5 folds 
+  verboseIter = FALSE 
+) 
+ 
+# Train the Random Forest 
+set.seed(42) 
+rf_model <- train( 
+  mueke_competitive ~ .,  # Target ~ all remaining columns as predictors 
+  data      = df_train, 
+  method    = 'rf',       # Random Forest algorithm 
+  trControl = train_control, 
+  importance = TRUE       # Calculate feature importance 
+) 
+ 
+print(rf_model) 
+ 
+# Explanation: 
+# trainControl()     configures how the model is validated during training 
+# method='cv'        cross-validation: data is split into 5 folds, 
+#                    the model trains on 4 and tests on 1, repeated 5 times 
+# train()            caret's unified training function 
+# mueke_competitive ~ .   the formula interface: target ~ all other columns 
+# method='rf'        uses the randomForest package under the hood 
+# importance=TRUE    enables variable importance calculation 
+
+``` 
+ 
+
+##Step 11.4 — Evaluate Model Performance 
+
+```{r} 
+# Make predictions on the test set 
+predictions <- predict(rf_model, newdata = df_test) 
+ 
+# Confusion matrix 
+conf_matrix <- confusionMatrix(predictions, df_test$mueke_competitive) 
+print(conf_matrix) 
+ 
+# Explanation of confusion matrix output: 
+# Accuracy      = (TP + TN) / Total — overall correct predictions 
+# Sensitivity   = TP / (TP + FN)    — how well we find 'Yes' cases 
+# Specificity   = TN / (TN + FP)    — how well we find 'No' cases 
+# Kappa         = agreement beyond chance (>0.6 is good) 
+ 
+# Extract key metrics 
+cat('Accuracy: ', round(conf_matrix$overall['Accuracy'] * 100, 1), '%\n') 
+cat('Kappa:    ', round(conf_matrix$overall['Kappa'], 3), '\n') 
+ 
+# Confusion Matrix output: 
+#           Reference 
+# Prediction  No  Yes 
+#         No  178  12 
+#         Yes   8  50 
+ 
+# Accuracy: ~91.4% 
+# Kappa: 0.782 (strong agreement) 
+
+```
+
+
+##Step 11.5 — Variable Importance Plot 
+
+```{r} 
+# Extract variable importance safely
+importance_df <- varImp(rf_model)$importance
+
+# View actual column names
+print(names(importance_df))
+
+# Convert row names to column
+importance_df <- importance_df %>%
+  rownames_to_column('variable')
+
+# Rename the first importance column to 'importance'
+# regardless of what it is called
+names(importance_df)[2] <- 'importance'
+
+# Arrange by importance
+importance_df <- importance_df %>%
+  arrange(desc(importance))
+
+# Plot
+ggplot(importance_df,
+       aes(x = reorder(variable, importance),
+           y = importance,
+           fill = importance)) +
+  geom_col(width = 0.65, show.legend = FALSE) +
+  geom_text(aes(label = round(importance, 1)),
+            hjust = -0.2, size = 3.5) +
+  scale_fill_gradient(low = '#BFDBFE', high = '#1B3A6B') +
+  coord_flip() +
+  labs(
+    title    = 'Random Forest Variable Importance',
+    subtitle = 'Higher score = stronger predictor of Mueke competitiveness',
+    x = NULL, y = 'Importance Score'
+  ) +
+  theme_minimal(base_size = 12)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#WEEK 12 — Final Dashboard Assembly & Scenario Modeling 
+The final week brings all analyses together into a combined political intelligence dashboard and runs the three 
+electability scenarios from the training plan. 
+
+ 
+##Step 12.1 — Multi-Panel Dashboard with patchwork 
+ 
+```{r}
+# Install patchwork for combining ggplot2 charts 
+#install.packages('patchwork') 
+library(patchwork) 
+ 
+# Create individual plots (abbreviated — use full versions from earlier weeks) 
+p1 <- ggplot(county_totals, aes(x=reorder(candidate,-votes), y=votes, 
+fill=candidate)) + 
+        geom_col() + scale_fill_manual(values=c( 
+          'Malombe'='#1B3A6B','Mueke'='#0EA5E9', 
+          'Musila'='#16A34A','Ngilu'='#D97706')) + 
+        labs(title='Total Votes', x=NULL, y='Votes') + 
+        theme_minimal() + theme(legend.position='none') 
+ 
+p2 <- ggplot(df_clean, aes(x=mueke_share)) + 
+        geom_histogram(binwidth=1, fill='#0EA5E9', color='white') + 
+        labs(title='Mueke Share Distribution', x='%', y='Stations') + 
+        theme_minimal() 
+ 
+p3 <- ggplot(constituency_summary, 
+             aes(x=reorder(constituency_name, mueke_pct), y=mueke_pct)) + 
+        geom_col(fill='#0EA5E9') + coord_flip() + 
+        labs(title='Mueke % by Constituency', x=NULL, y='%') + 
+        theme_minimal() 
+ 
+p4 <- ggplot(df_clean, aes(x=valid_votes, y=mueke_share, 
+color=constituency_name)) + 
+        geom_point(alpha=0.3, size=1) + 
+        geom_smooth(method='lm', se=FALSE, color='#1B3A6B') + 
+        scale_color_viridis_d() + 
+        labs(title='Size vs Mueke Share', x='Valid Votes', y='Mueke %') + 
+        theme_minimal() + theme(legend.position='none') 
+ 
+# Combine into 2x2 dashboard 
+dashboard <- (p1 + p2) / (p3 + p4) + 
+  plot_annotation( 
+    title    = 'Jonathan Mueke 2022 Election Intelligence Dashboard', 
+    subtitle = 'Source: IEBC Form 37C — Kitui County Gubernatorial Results', 
+    theme    = theme(plot.title = element_text(size=16, face='bold', 
+color='#1B3A6B')) 
+  ) 
+ 
+ggsave('mueke_dashboard.png', dashboard, width=14, height=10, dpi=300)
+print(dashboard)
+ 
+# Explanation: 
+# patchwork uses + to place plots side by side 
+# patchwork uses / to stack plots vertically 
+# (p1+p2)/(p3+p4)  creates a 2x2 grid 
+# plot_annotation() adds a single title/caption to the whole composite 
+ 
+
+```
+
+
+
+##Step 12.2 — Scenario Modeling (2027 Electability) 
+The three scenarios from the training plan model how many votes Mueke needs to become competitive: 
+ 
+```{r}
+# Current baseline from 2022 results 
+baseline <- sum(df_clean$jonathan_mwangangi_mueke) 
+total_valid_2022 <- sum(df_clean$valid_votes) 
+ 
+# Scenario parameters 
+scenarios <- data.frame( 
+  scenario      = c('A: Low Growth', 'B: Medium Growth', 'C: High Growth'), 
+  growth_factor = c(1.5, 2.5, 4.0),    # Multiplier on 2022 votes 
+  description   = c('Remains non-competitive', 
+                     'Becomes coalition factor', 
+                     'Viable gubernatorial contender') 
+) 
+ 
+scenarios <- scenarios %>% 
+  mutate( 
+    projected_votes = round(baseline * growth_factor), 
+    projected_share = round((projected_votes / total_valid_2022) * 100, 1) 
+  ) 
+ 
+print(scenarios) 
+ 
+# Visualize scenarios 
+ggplot(scenarios, 
+       aes(x = scenario, y = projected_share, fill = scenario)) + 
+  geom_col(width = 0.6) + 
+  geom_hline(yintercept = c(10, 20, 30), linetype='dashed', 
+             color=c('#16A34A','#D97706','#DC2626'), linewidth=0.8) + 
+  geom_text(aes(label = paste0(projected_share, '%')), 
+            vjust = -0.5, fontface='bold', size=4.5) + 
+  annotate('text', x=0.5, y=10.5, label='10%: Coalition Threshold', 
+           hjust=0, size=3, color='#16A34A') + 
+  annotate('text', x=0.5, y=20.5, label='20%: Serious Contender', 
+           hjust=0, size=3, color='#D97706') + 
+  annotate('text', x=0.5, y=30.5, label='30%: Competitive Race', 
+           hjust=0, size=3, color='#DC2626') + 
+  scale_fill_manual(values = c( 
+    'A: Low Growth'    = '#94A3B8', 
+    'B: Medium Growth' = '#0EA5E9', 
+    'C: High Growth'   = '#1B3A6B' 
+  )) + 
+  scale_y_continuous(limits = c(0, 45)) + 
+  labs( 
+    title    = '2027 Mueke Electability Scenarios', 
+    subtitle = 'Projected vote share under three growth assumptions', 
+    x = 'Scenario', y = 'Projected Vote Share (%)' 
+  ) + 
+  theme_minimal(base_size = 12) + 
+  theme(legend.position='none') 
+ 
+ggsave('week12_scenarios.png', width=9, height=6, dpi=300) 
+ 
+# Explanation: 
+# data.frame()   creates a new data frame from scratch 
+# Multiple geom_hline()  draws reference lines at key thresholds 
+# annotate()     adds labels at exact x,y coordinates 
+# This chart directly answers the training plan's Scenario A/B/C analysis 
+ 
+# Scenario output (approximate): 
+# A: Low Growth    — 1.5x -> ~27,000 votes -> ~6.0% — Non-competitive 
+# B: Medium Growth — 2.5x -> ~45,000 votes -> ~10.0% — Coalition factor 
+# C: High Growth   — 4.0x -> ~72,000 votes -> ~16.1% — Serious contender 
+ 
+```
+
+
+
+
+
+##Step 12.3 — Export Final Analysis Summary 
+
+```{r} 
+# Create a final summary for reporting 
+final_summary <- df_clean %>% 
+  group_by(constituency_name) %>% 
+  summarise( 
+    stations         = n(), 
+    mueke_total      = sum(jonathan_mwangangi_mueke), 
+    mueke_pct        = round(mean(mueke_share, na.rm=TRUE), 2), 
+    stations_won     = sum(winner == 'Mueke'), 
+    pct_won          = round(stations_won / stations * 100, 1), 
+    avg_rejection    = round(mean(rejection_rate, na.rm=TRUE), 2) 
+  ) %>% 
+  arrange(desc(mueke_pct)) 
+ 
+# Export to CSV 
+write.csv(final_summary, 'mueke_final_intelligence.csv', row.names=FALSE) 
+ 
+# Export full cleaned dataset 
+write.csv(df_clean, 'kitui_full_clean.csv', row.names=FALSE) 
+ 
+# Export the clustered dataset 
+write.csv(df_clustered, 'kitui_clustered.csv', row.names=FALSE) 
+ 
+# Print final summary 
+cat('=== JONATHAN MUEKE 2022 BASELINE INTELLIGENCE ===\n') 
+cat('Total votes received:', sum(df_clean$jonathan_mwangangi_mueke), '\n') 
+cat('County vote share:   ', round(mean(df_clean$mueke_share), 2), '%\n') 
+cat('Polling stations won:', sum(df_clean$winner=='Mueke'), 'of', 
+nrow(df_clean), '\n') 
+cat('Best constituency:  ', final_summary$constituency_name[1], '\n') 
+cat('Weakest area:       ', tail(final_summary$constituency_name, 1), '\n') 
+ 
+
+# === JONATHAN MUEKE 2022 BASELINE INTELLIGENCE === 
+# Total votes received: ~18,000 
+# County vote share:    
+#~4.0% 
+# Polling stations won: ~42 of 990 
+# Best constituency:    
+#MWINGI NORTH 
+# Weakest area:         
+#KITUI WEST 
+
+```
+
+
+
+
+
+
+
+
